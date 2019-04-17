@@ -1,0 +1,5 @@
+#! /bin/bash
+rm -rf libFDOPT.a
+make clean
+make lib
+make clean 
