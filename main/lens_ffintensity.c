@@ -456,6 +456,8 @@ int main(int argc, char **argv)
     int ffsymxy[2]={round(tmp[2]),round(tmp[3])};
     char ffname[PETSC_MAX_PATH_LEN];
     getstr("-ffwindow_outputfilename",ffname,"farfield_intensity.dat");
+    int ideal_farfield;
+    getint("-ideal_farfield",&ideal_farfield,-1);
     
     PetscScalar *dofext=(PetscScalar *)malloc(dofi[specID].meps_total*sizeof(PetscScalar));
     
@@ -487,7 +489,21 @@ int main(int argc, char **argv)
       vecfill_zslice(data[specID].subcomm, data[specID].dg.da, data[specID].dofi.mx,data[specID].dofi.my, data[specID].Jx[i],data[specID].Jy[i], NULL, b, data[specID].iz_src);
       VecScale(b,-PETSC_i*data[specID].omega);
 
-      SolveMatrixDirect(data[specID].subcomm,data[specID].ksp[i],M,b,data[specID].x[i],&(data[specID].its[i]),data[specID].maxit);
+      if(ideal_farfield>=0){
+	
+	if(ideal_farfield==0) //Ex-polarized farfield 
+	  vecfill_zslice(data[specID].subcomm, data[specID].dg.da, data[specID].dofi.mx,data[specID].dofi.my, data[specID].ux[i],data[specID].uy[i], NULL, data[specID].x[i], data[specID].iz_mtr);
+	if(ideal_farfield==1) //Ey-polarized farfield
+	  vecfill_zslice(data[specID].subcomm, data[specID].dg.da, data[specID].dofi.mx,data[specID].dofi.my, data[specID].vx[i],data[specID].vy[i], NULL, data[specID].x[i], data[specID].iz_mtr);
+	if(ideal_farfield==2) //Ez-polarized farfield
+	  vecfill_zslice(data[specID].subcomm, data[specID].dg.da, data[specID].dofi.mx,data[specID].dofi.my, data[specID].wx[i],data[specID].wy[i], NULL, data[specID].x[i], data[specID].iz_mtr);
+	VecConjugate(data[specID].x[i]);
+	
+      }else{
+
+	SolveMatrixDirect(data[specID].subcomm,data[specID].ksp[i],M,b,data[specID].x[i],&(data[specID].its[i]),data[specID].maxit);
+
+      }
       MPI_Barrier(subcomm);
       MPI_Barrier(PETSC_COMM_WORLD);
       
