@@ -1,25 +1,34 @@
 (define-param Nx 10000)
-(define-param Ny 257)
+(define-param Ny 119)
 (define-param Npmlx 0)
 (define-param Npmly 25)
-(define-param Nxo 0)
 (define-param hx 0.02)
 (define-param hy 0.02)
 (define-param iy_src 27)
-(define-param iy_mtr 162)
-
+(define-param iy_mtr 92)
 (define-param fcen 1.0)
-(define-param df 0.1)
-(define-param comp Ez)
 (define-param theta 0)
-(define-param thetarad (- (/ (* theta pi) 180)) )
-(define-param nsub 1.545)
+(define-param inputfilename "spec0_epsilon.h5")
+(define-param focal_length 100)
+(define-param farfield_x 0)
+(define-param farfield_xsize 50)
+(define-param farfield_ysize 0.1)
+(define-param farfield_dh 0.1)
+(define-param flux0? false)
+(define-param printff? true)
+(define-param nsub 1.5)
 
+(define-param Nxo 0)
+(define-param df 0.1)
+(define-param res (/ 1 hx))
+(define-param comp Ez)
+
+(define-param thetarad (- (/ (* theta pi) 180)) )
 (define-param sx (* Nx hx))
 (define-param sy (* Ny hy))
 (define-param dpmlx (* Npmlx hx))
 (define-param dpmly (* Npmly hy))
-(define-param res (/ 1 hx))
+
 (define-param jy0 (- (* iy_src hy) (/ sy 2)))
 (define-param ry0 (- (* iy_mtr hy) (/ sy 2)))
 (define-param rsx (- sx (* 2 Nxo hx)))
@@ -38,10 +47,9 @@
 (set! force-complex-fields? true)
 (set! eps-averaging? false)
 
-(define-param flux0? false)
 (if flux0?
     (set! default-material (make dielectric (epsilon (* nsub nsub))))
-    (set-param! epsilon-input-file "epsilon.h5")
+    (set-param! epsilon-input-file inputfilename)
 )
 
 (define (my-amp-func p) (exp (* 0+1i nsub k0 (sin thetarad) (vector3-x p))))
@@ -70,14 +78,13 @@
 
 (display-fluxes trans)
 
-(define-param ffx 0)
-(define-param ffy (+ ry0 100))
-(define-param ffLx 50)
-(define-param ffLy 0.1)
-(define-param ffdL 0.1)
+(define-param ffx farfield_x)
+(define-param ffy (+ ry0 focal_length))
+(define-param ffLx farfield_xsize)
+(define-param ffLy farfield_ysize)
+(define-param ffdL farfield_dh)
 (define-param ffres (/ 1 ffdL))
 
-(define-param printff? true)
 (if printff?
 (output-farfields nearfield
  (string-append "farfield-freq" (number->string fcen) "-angle" (number->string theta))

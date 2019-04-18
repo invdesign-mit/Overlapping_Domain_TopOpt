@@ -2,11 +2,16 @@ import numpy as np
 import h5py as hp
 import os
 
-numcells_x=10
-numcells_y=1
+numcells_x=int(raw_input("Enter the number of cells along X axis: "))
+numcells_y=int(raw_input("Enter the number of cells along Y axis: "))
 
-join=1
-printEfield=1
+join=int(raw_input("Join the cells and generate the full domain? 0 or 1: "))
+printEfield=int(raw_input("Print the Electric fields? 0 or 1: "))
+
+mirrorX=int(raw_input("Mirror the structure along X, eps(x)=eps(-x)? 0 or 1: "))
+mirrorY=int(raw_input("Mirror the structure along Y, eps(y)=eps(-y)? 0 or 1: "))
+
+prefix=raw_input("Enter the prefix for the names of the h5 output files: ")
 
 if join==1:
     epsxy=[]
@@ -32,7 +37,11 @@ if join==1:
         for iy in range(ny):
             for ix in range(nx):
                 epsmeep[ix,iy,iz]=epsxy[iz,iy,ix]
-    fid=hp.File('epsilon.h5','w')
+    if mirrorX==1:
+        epsmeep=np.concatenate((np.flip(epsmeep,axis=0),epsmeep),axis=0)
+    if mirrorY==1:
+        epsmeep=np.concatenate((np.flip(epsmeep,axis=1),epsmeep),axis=1)
+    fid=hp.File(prefix+'epsilon.h5','w')
     fid.create_dataset('eps',data=np.squeeze(epsmeep))
     fid.close()
 else:
@@ -43,8 +52,8 @@ else:
             eps=np.array(fid['eps'])
             eps=np.squeeze(eps[:,:,:,0,0])
             fid.close()
-            fid=hp.File('isoreal_'+name+'.h5','w')
-            fid.create_dataset('isoreal',data=eps)
+            fid=hp.File(prefix+name+'.h5','w')
+            fid.create_dataset('eps',data=eps)
             fid.close()
 
 
@@ -121,7 +130,7 @@ if printEfield==1:
                 EziXY=EziX
             else:
                 EziXY=np.concatenate((EziXY,EziX),axis=1)
-        fid=hp.File('Efield.h5','w')
+        fid=hp.File(prefix+'Efield.h5','w')
         fid.create_dataset('Exr',data=ExrXY)
         fid.create_dataset('Exi',data=ExiXY)
         fid.create_dataset('Eyr',data=EyrXY)
@@ -136,7 +145,7 @@ if printEfield==1:
                 fid=hp.File(name,'r')
                 E=np.array(fid['E'])
                 fid.close()
-                fid=hp.File('split_'+name+'.h5','w')
+                fid=hp.File(prefix+name+'.h5','w')
                 fid.create_dataset('Exr',data=np.squeeze(E[:,:,:,0,0]))
                 fid.create_dataset('Exi',data=np.squeeze(E[:,:,:,0,1]))
                 fid.create_dataset('Eyr',data=np.squeeze(E[:,:,:,1,0]))

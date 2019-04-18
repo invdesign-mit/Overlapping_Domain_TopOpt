@@ -1,18 +1,23 @@
 import numpy as np
 import h5py as hp
 
-ffnx=500
-ffny=1
-ffnz=1
+ffnx=int(raw_input("Enter # of points along x: "))
+ffny=int(raw_input("Enter # of points along y: "))
+ffnz=int(raw_input("Enter # of points along z: "))
 
-fname='ffdata.dat'
-h5name='ffdata.h5'
+fname=raw_input("Enter the name of the input file: ")
+prefix_output=raw_input("Enter the prefix for the name of the output file: ")
 
-h5out=0
+h5out=int(raw_input("Generate an h5 output? 0 or 1: "))
+normalize=int(raw_input("Normalize the data by maximum value? 0 or 1: "))
 
 data=np.loadtxt(fname)
-maxdat=np.max(data)
+if normalize==1:
+    maxdat=np.max(data)
+else:
+    maxdat=1
 data=data/maxdat
+
 if h5out==1:
 
     h5dat=np.zeros((ffnx,ffny,ffnz))
@@ -22,9 +27,9 @@ if h5out==1:
                 i=ix+ffnx*iy+ffnx*ffny*iz
                 h5dat[ix,iy,iz]=data[i]
 
-    fid=hp.File(h5name,'w')
+    fid=hp.File(prefix_output+'.h5','w')
     fid.create_dataset('data',data=h5dat)
     fid.close()
 
 else:
-    np.savetxt(fname,data)
+    np.savetxt(prefix_output+'.dat',data)
