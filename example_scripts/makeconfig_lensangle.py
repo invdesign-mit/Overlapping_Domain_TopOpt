@@ -67,12 +67,12 @@ dz=0.02
 
 #alternating patterened and uniform layers
 mz=[35,35,35]
-mid=[5,5]
+mid=[35,35]
 mpmlz=[25,25]
 pml2src=2
 src2stk=10
 stk2ref=10
-ref2pml=70
+ref2pml=2
 stk=sum(mz)+sum(mid)
 Mz=mpmlz[0]+pml2src+src2stk+stk+stk2ref+ref2pml+mpmlz[1]
 mzslab=1
@@ -85,56 +85,59 @@ bcx=2
 bcy=2
 bcz=2
 
-nspecs=3
+epsnscb=1.53**2
+
+nspecs=6
 
 pxymo=np.zeros((4,nspecs),dtype=int)
 pxymo[:,0]=[0,0,0,0]
-pxymo[:,1]=[100,0,0,0]
-pxymo[:,2]=[100,0,0,0]
+pxymo[:,1]=[0,0,0,0]
+pxymo[:,2]=[0,0,0,0]
+pxymo[:,3]=[100,0,0,0]
+pxymo[:,4]=[100,0,0,0]
+pxymo[:,5]=[100,0,0,0]
 
 mpmlx=np.zeros((2,nspecs))
 mpmlx[:,0]=[0,0]
 mpmlx[:,1]=[0,0]
-mpmlx[:,2]=[25,25]
+mpmlx[:,2]=[0,0]
+mpmlx[:,3]=[25,25]
+mpmlx[:,4]=[25,25]
+mpmlx[:,5]=[25,25]
 mpmly=np.zeros((2,nspecs))
 mpmly[:,0]=[0,0]
 mpmly[:,1]=[0,0]
 mpmly[:,2]=[0,0]
+mpmly[:,3]=[0,0]
+mpmly[:,4]=[0,0]
+mpmly[:,5]=[0,0]
 
-freq=[1,1,1]
-
-nsub=[1.5,1.5,1.5]
-nsup=[1,1,1]
+freq=[1,1,1,1,1,1]
 
 #eps shape should be nspecs x 2*total_layers; for each spec, [eps_foreground,eps_background]
-#tot_layers=2*nlayers+1
-eps=np.array([ ( nsub[i]**2,nsub[i]**2,
-                 2.25,1,
-                 2.25,2.25,
-                 2.25,1,
-                 2.25,2.25,
-                 2.25,1,
-                 nsup[i]**2,nsup[i]**2 ) for i in range(nspecs) ])
+#ntot_layers=2*numlayers+1
+eps=np.array([ ( epsnscb,epsnscb,
+                 epsnscb,1,
+                 epsnscb,epsnscb,
+                 epsnscb,1,
+                 epsnscb,epsnscb,
+                 epsnscb,1,
+                 1,1 ) for i in range(nspecs) ])  
+print eps
 
-
-polar=[0,0,0]
-azimuth=[0,0,0]
+nsub=1.53*np.ones(nspecs)
+polar=[0,15,30,0,15,30]
+azimuth=[0,0,0,0,0,0]
 ax=np.zeros((2,nspecs))
 ay=np.zeros((2,nspecs))
-ax[:,0]=[0,0]
-ay[:,0]=[1,0]
-ax[:,1]=[0,0]
-ay[:,1]=[1,0]
-ax[:,2]=[0,0]
-ay[:,2]=[1,0]
+ay[0,:]=1
 kz=np.zeros(nspecs)
 
 oxy=[nx*numcells_x*dx/2.0,ny*numcells_y*dy/2.0]
 symxy=[0,0]
 xyzfar=np.zeros((3,nspecs))
-xyzfar[:,0]=[0,0,100]
-xyzfar[:,1]=[0,0,100]
-xyzfar[:,2]=[0,0,100]
+xyzfar[2,:]=100
+xyzfar[0,:]=[ 100*np.tan(polar[i]*np.pi/180) for i in range(nspecs) ]
 
 filter_rx=1
 filter_ry=1
@@ -143,7 +146,7 @@ filter_normalized=1
 filter_beta=0
 filter_eta=0.3
 
-init_filename='dof.txt'
+init_filename='mid.txt'
 
 chkeps=1
 

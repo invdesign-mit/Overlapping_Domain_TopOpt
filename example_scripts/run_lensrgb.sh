@@ -1,4 +1,5 @@
 np=$1
+config_file=$2
 a0=0.02669
 a1=0.044778
 a2=0.04728
@@ -7,14 +8,14 @@ b1=$(echo "1/sqrt($a1)" | bc -l)
 b2=$(echo "1/sqrt($a2)" | bc -l)
 
 mpirun -np $np lens_ffintensity_exec \
-       -options_file config \
+       -options_file $config_file \
        -Job 1 \
        -specID 0,1,2 \
-       -printEfield 1 \
+       -printEfield 0 \
        -is,s0,s1,ds 0,0,1,0.01 \
        -print_at_singleobj 1 \
        -print_at_multiobj 1 \
-       -initial_dummy 0 \
+       -initial_dummy 0.60 \
        -algouter 24 \
        -alginner 24 \
        -algmaxeval 1000 \
