@@ -63,6 +63,10 @@ int main(int argc, char **argv)
   int mzslab;
   getint("-mzslab",&mzslab,1);
 
+  int mirrorX, mirrorY;
+  getint("-mirrorX",&mirrorX,1);
+  getint("-mirrorY",&mirrorY,0);
+  
   int iz_src, iz_mtr;
   getint("-iz_source",&iz_src,30);
   getint("-iz_monitor",&iz_mtr,130);
@@ -232,14 +236,30 @@ int main(int argc, char **argv)
 
     data[ispec].print_at_singleobj=print_at_singleobj;
     data[ispec].print_at_multiobj=print_at_multiobj;
+
+    data[ispec].mirrorXY[0]=mirrorX;
+    data[ispec].mirrorXY[1]=mirrorY;
     
   }
 
+  //read arbitrary dof input
   PetscReal *dof=(PetscReal *)malloc(neps_total*sizeof(PetscReal));
   char init_filename[PETSC_MAX_PATH_LEN];
   getstr("-init_dof_name",init_filename,"dof.txt");
   readfromfile_f2f(init_filename,dof,neps_total);
 
+  //pick up a quadrant of dof, discarding the rest; this quadrant (not the full dof) should be used as the initial guess for the optimization
+  int nxcells = (mirrorX==1) ? numcells_x/2 : numcells_x;
+  int nycells = (mirrorY==1) ? numcells_y/2 : numcells_y;
+  int reduceXY[2] = {0,0};
+  int neps_reduced = nx*ny*numlayers*nxcells*nycells;
+  PetscReal *dof_reduced=(PetscReal *)malloc(neps_reduced*sizeof(PetscReal));
+  mirrorxy(dof_reduced,dof, nx,ny,numlayers, nxcells,nycells, reduceXY,1);
+
+  //re-symmetrize the dof array
+  int mirrorXY[2] = {mirrorX,mirrorY};
+  mirrorxy(dof_reduced,dof, nx,ny,numlayers, nxcells,nycells, mirrorXY,0);
+  
   int Job;
   getint("-Job",&Job,0);
 
@@ -327,7 +347,7 @@ int main(int argc, char **argv)
     int specID;
     getint("-specID",&specID,0);
 
-    PetscReal *grad=(PetscReal *)malloc(neps_total*sizeof(PetscReal));    
+    PetscReal *grad=(PetscReal *)malloc(neps_reduced*sizeof(PetscReal));    
     
     double ss[4];
     int ns=4;
@@ -336,7 +356,7 @@ int main(int argc, char **argv)
     double s0=ss[1], s1=ss[2], ds=ss[3];
     for(double s=s0;s<s1;s+=ds){
       dof[is]=s;
-      double objval = ffintensity(neps_total,dof,grad,&(data[specID]));
+      double objval = ffintensitysym(neps_reduced,dof_reduced,grad,&(data[specID]));
       PetscPrintf(PETSC_COMM_WORLD,"objval: %g %.16g %.16g \n",dof[is],objval,grad[is]);
     }
 
@@ -352,9 +372,9 @@ int main(int argc, char **argv)
 
     if(numopt==1){
     
-      double *lb=(double *)malloc(neps_total*sizeof(double));
-      double *ub=(double *)malloc(neps_total*sizeof(double));
-      for(int i=0;i<neps_total;i++){
+      double *lb=(double *)malloc(neps_reduced*sizeof(double));
+      double *ub=(double *)malloc(neps_reduced*sizeof(double));
+      for(int i=0;i<neps_reduced;i++){
 	lb[i]=0.0;
 	ub[i]=1.0;
       }
@@ -368,9 +388,9 @@ int main(int argc, char **argv)
 
       nlopt_result nlopt_return;
 
-      double result=optimize_generic(neps_total, dof,
+      double result=optimize_generic(neps_reduced, dof_reduced,
 				     lb, ub,
-				     (nlopt_func)ffintensity, &(data[specID[0]]),
+				     (nlopt_func)ffintensitysym, &(data[specID[0]]),
 				     NULL,NULL,0,
 				     alg,
 				     &nlopt_return);
@@ -383,14 +403,14 @@ int main(int argc, char **argv)
       
     }else if(numopt>1){
 
-      int ndofAll=neps_total+1;
+      int ndofAll=neps_reduced+1;
       double *dofAll=(double *)malloc(ndofAll*sizeof(double));
       double *lbAll=(double *)malloc(ndofAll*sizeof(double));
       double *ubAll=(double *)malloc(ndofAll*sizeof(double));
-      for(int i=0;i<neps_total;i++){
+      for(int i=0;i<neps_reduced;i++){
 	lbAll[i]=0.0;
 	ubAll[i]=1.0;
-	dofAll[i]=dof[i];
+	dofAll[i]=dof_reduced[i];
       }
       lbAll[ndofAll-1]=0.0;
       ubAll[ndofAll-1]=1.0/0.0;
@@ -408,7 +428,7 @@ int main(int argc, char **argv)
       void *constrdata[numopt];
       nlopt_func* maximins=(nlopt_func*)malloc(numopt*sizeof(nlopt_func));
       for(int i=0;i<numopt;i++){
-	maximins[i]=(nlopt_func)ffintensity_maximinconstraint;
+	maximins[i]=(nlopt_func)ffintensitysym_maximinconstraint;
 	data[specID[i]].print_at_singleobj=-1;
 	constrdata[i]=&(data[specID[i]]);
       }
@@ -626,6 +646,7 @@ int main(int argc, char **argv)
   MatDestroy(&Q);
 
   free(dof);
+  free(dof_reduced);
   
   MPI_Barrier(subcomm);
   MPI_Barrier(PETSC_COMM_WORLD);

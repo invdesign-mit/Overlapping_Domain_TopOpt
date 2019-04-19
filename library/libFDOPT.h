@@ -16,5 +16,5 @@
 #include "ffintensity.h"
 #include "optitemp.h"
 #include "near2far.h"
-
+#include "sym.h"
 

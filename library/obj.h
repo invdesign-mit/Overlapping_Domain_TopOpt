@@ -50,6 +50,8 @@ typedef struct{
 
   int print_at_singleobj;
   int print_at_multiobj;
+
+  int mirrorXY[2];
   
 } data_;
 
