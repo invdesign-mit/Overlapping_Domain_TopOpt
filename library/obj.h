@@ -52,6 +52,8 @@ typedef struct{
   int print_at_multiobj;
 
   int mirrorXY[2];
+
+  PetscScalar total_phaseoverlap[3];
   
 } data_;
 

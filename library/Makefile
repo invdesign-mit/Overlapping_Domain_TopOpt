@@ -10,7 +10,7 @@ CC=mpicc
 CFLAGS   += -O3 -Wall -march=native -fcx-limited-range -fno-exceptions
 INCFLAGS = -I. ${NLOPT_INC} ${PETSC_CC_INCLUDES}
 
-LIBS4OBJS=ovmat.o array2vec.o input.o output.o planewave.o grid.o dof2dom.o logging.o pml.o vec.o mat.o solver.o filters.o ffintensity.o optitemp.o near2far.o sym.o
+LIBS4OBJS=ovmat.o array2vec.o input.o output.o planewave.o grid.o dof2dom.o logging.o pml.o vec.o mat.o solver.o filters.o ffintensity.o optitemp.o near2far.o sym.o phase.o phprofile.o ovmat_with_mirror.o
 
 lib: libFDOPT.a $(LIBS4OBJS)
 

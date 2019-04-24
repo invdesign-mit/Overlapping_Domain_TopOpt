@@ -63,6 +63,10 @@ int main(int argc, char **argv)
   int mzslab;
   getint("-mzslab",&mzslab,1);
 
+  int mirrorX, mirrorY;
+  getint("-mirrorX",&mirrorX,1);
+  getint("-mirrorY",&mirrorY,0);
+  
   int iz_src, iz_mtr;
   getint("-iz_source",&iz_src,30);
   getint("-iz_monitor",&iz_mtr,130);
@@ -70,11 +74,6 @@ int main(int argc, char **argv)
   int maxit;
   getint("-maxit",&maxit,15);
 
-  int mirrorX,mirrorY;
-  getint("-mirrorX",&mirrorX,0);
-  getint("-mirrorY",&mirrorY,0);
-  int mirrorXY[2]={mirrorX,mirrorY};
-  
   int print_at_singleobj, print_at_multiobj;
   getint("-print_at_singleobj",&print_at_singleobj,-1);
   getint("-print_at_multiobj",&print_at_multiobj,-1);
@@ -112,11 +111,11 @@ int main(int argc, char **argv)
 	       ncells_per_comm,ncomms);
 
     Mat Wtmp;
-    ovmatsym(PETSC_COMM_WORLD, &Wtmp,
-	     nx, ny,
-	     dofi[ispec].px, dofi[ispec].py,
-	     numcells_x, numcells_y, numlayers,
-	     1, 0, 0, mirrorXY);
+    ovmat(PETSC_COMM_WORLD, &Wtmp,
+	  nx, ny,
+	  dofi[ispec].px, dofi[ispec].py,
+	  numcells_x, numcells_y, numlayers,
+	  1, 0, 0);
     MatMatMult(Wtmp,Q,MAT_INITIAL_MATRIX,PETSC_DEFAULT,&(data[ispec].W));
     MatDestroy(&Wtmp);
     
@@ -175,20 +174,19 @@ int main(int argc, char **argv)
     }
     PetscReal far_params[7];
     nget=7;
-    sprintf(tmpstr,"-spec%d_out_oxy,symxy,xyzfar",ispec);
+    sprintf(tmpstr,"-spec%d_out_oxy,axy,xyzfar",ispec);
     getrealarray(tmpstr,far_params,&nget,0);
     double oxy[2]={far_params[0],far_params[1]};
-    int symxy[2]={round(far_params[2]),round(far_params[3])};
+    double axy[2]={far_params[2],far_params[3]};
     double xyzfar[3]={far_params[4],far_params[5],far_params[6]};
     conjugate=PETSC_FALSE;
-    create_near2far(PETSC_COMM_WORLD, colour, ncells_per_comm,
-		    data[ispec].ux, data[ispec].uy,
-		    data[ispec].vx, data[ispec].vy,
-		    data[ispec].wx, data[ispec].wy,
-		    nx, ny, dofi[ispec].px, dofi[ispec].py, numcells_x, numcells_y, dx, dy,
-		    oxy, symxy,
-		    xyzfar,
-		    data[ispec].freq, 1.0,1.0, conjugate);
+
+    phdiff(PETSC_COMM_WORLD, colour, ncells_per_comm,
+	   data[ispec].ux, data[ispec].uy,
+	   nx,ny, dofi[ispec].px,dofi[ispec].py, numcells_x,numcells_y, dx,dy,
+	   data[ispec].freq, oxy, xyzfar, axy, conjugate);
+    data[ispec].vx=NULL, data[ispec].vy=NULL;
+    data[ispec].wx=NULL, data[ispec].wy=NULL;
     MPI_Barrier(PETSC_COMM_WORLD);
        
     sprintf(tmpstr,"epsDiff%d.h5",ispec);
@@ -237,14 +235,51 @@ int main(int argc, char **argv)
 
     data[ispec].print_at_singleobj=print_at_singleobj;
     data[ispec].print_at_multiobj=print_at_multiobj;
+
+    data[ispec].mirrorXY[0]=mirrorX;
+    data[ispec].mirrorXY[1]=mirrorY;
     
   }
 
+  //read arbitrary dof input
   PetscReal *dof=(PetscReal *)malloc(neps_total*sizeof(PetscReal));
   char init_filename[PETSC_MAX_PATH_LEN];
   getstr("-init_dof_name",init_filename,"dof.txt");
   readfromfile_f2f(init_filename,dof,neps_total);
 
+  //pick up a quadrant of dof, discarding the rest; this quadrant (not the full dof) should be used as the initial guess for the optimization
+  int nxcells = (mirrorX==1) ? numcells_x/2 : numcells_x;
+  int nycells = (mirrorY==1) ? numcells_y/2 : numcells_y;
+  int reduceXY[2] = {0,0};
+  int neps_reduced = nx*ny*numlayers*nxcells*nycells;
+  PetscReal *dof_reduced=(PetscReal *)malloc(neps_reduced*sizeof(PetscReal));
+  mirrorxy(dof_reduced,dof, nx,ny,numlayers, nxcells,nycells, reduceXY,1);
+
+  //re-symmetrize the dof array
+  int mirrorXY[2] = {mirrorX,mirrorY};
+  mirrorxy(dof_reduced,dof, nx,ny,numlayers, nxcells,nycells, mirrorXY,0);
+
+  int rescale_phase;
+  getint("-rescale_phase",&rescale_phase,1);
+  if(rescale_phase){
+    double *grad=(double *)malloc(neps_reduced*sizeof(double));
+    for(int i=0;i<nspecs;i++){
+      double objval = phaseoverlapsym(neps_reduced,dof_reduced,grad,&(data[i]));
+      PetscScalar obj = data[i].total_phaseoverlap[0];
+      double phi = (creal(obj)>0) ? -tan(cimag(obj)/creal(obj)) : -tan(cimag(obj)/creal(obj)) - M_PI;
+      double objnew = creal( cexp(PETSC_i * phi) * obj );
+      int ng2 = gi[i].N[Xx]*gi[i].N[Yy];
+      for(int j1=0;j1<ncells_per_comm;j1++)
+	for(int j2=0;j2<ng2;j2++)
+	  data[i].ux[j1][j2]*=cexp(PETSC_i*phi), data[i].uy[j1][j2]*=cexp(PETSC_i*phi);
+      PetscPrintf(PETSC_COMM_WORLD,"PhasePrep specID %d: current phase-overlap: %.16g\n",i,objval);
+      PetscPrintf(PETSC_COMM_WORLD,"PhasePrep specID %d: complex-valued phase-overlap: (%.16g,%.16g)\n",i,creal(obj),cimag(obj));
+      PetscPrintf(PETSC_COMM_WORLD,"PhasePrep specID %d: optimal global phase: %.16g\n",i,phi);
+      PetscPrintf(PETSC_COMM_WORLD,"PhasePrep specID %d: updated phase-overlap: %.16g\n",i,objnew);
+    }
+    free(grad);
+  }
+      
   int Job;
   getint("-Job",&Job,0);
 
@@ -332,7 +367,7 @@ int main(int argc, char **argv)
     int specID;
     getint("-specID",&specID,0);
 
-    PetscReal *grad=(PetscReal *)malloc(neps_total*sizeof(PetscReal));    
+    PetscReal *grad=(PetscReal *)malloc(neps_reduced*sizeof(PetscReal));    
     
     double ss[4];
     int ns=4;
@@ -341,7 +376,7 @@ int main(int argc, char **argv)
     double s0=ss[1], s1=ss[2], ds=ss[3];
     for(double s=s0;s<s1;s+=ds){
       dof[is]=s;
-      double objval = ffintensity(neps_total,dof,grad,&(data[specID]));
+      double objval = phaseoverlapsym(neps_reduced,dof_reduced,grad,&(data[specID]));
       PetscPrintf(PETSC_COMM_WORLD,"objval: %g %.16g %.16g \n",dof[is],objval,grad[is]);
     }
 
@@ -357,9 +392,9 @@ int main(int argc, char **argv)
 
     if(numopt==1){
     
-      double *lb=(double *)malloc(neps_total*sizeof(double));
-      double *ub=(double *)malloc(neps_total*sizeof(double));
-      for(int i=0;i<neps_total;i++){
+      double *lb=(double *)malloc(neps_reduced*sizeof(double));
+      double *ub=(double *)malloc(neps_reduced*sizeof(double));
+      for(int i=0;i<neps_reduced;i++){
 	lb[i]=0.0;
 	ub[i]=1.0;
       }
@@ -373,9 +408,9 @@ int main(int argc, char **argv)
 
       nlopt_result nlopt_return;
 
-      double result=optimize_generic(neps_total, dof,
+      double result=optimize_generic(neps_reduced, dof_reduced,
 				     lb, ub,
-				     (nlopt_func)ffintensity, &(data[specID[0]]),
+				     (nlopt_func)phaseoverlapsym, &(data[specID[0]]),
 				     NULL,NULL,0,
 				     alg,
 				     &nlopt_return);
@@ -388,14 +423,14 @@ int main(int argc, char **argv)
       
     }else if(numopt>1){
 
-      int ndofAll=neps_total+1;
+      int ndofAll=neps_reduced+1;
       double *dofAll=(double *)malloc(ndofAll*sizeof(double));
       double *lbAll=(double *)malloc(ndofAll*sizeof(double));
       double *ubAll=(double *)malloc(ndofAll*sizeof(double));
-      for(int i=0;i<neps_total;i++){
+      for(int i=0;i<neps_reduced;i++){
 	lbAll[i]=0.0;
 	ubAll[i]=1.0;
-	dofAll[i]=dof[i];
+	dofAll[i]=dof_reduced[i];
       }
       lbAll[ndofAll-1]=0.0;
       ubAll[ndofAll-1]=1.0/0.0;
@@ -413,16 +448,14 @@ int main(int argc, char **argv)
       void *constrdata[numopt];
       nlopt_func* maximins=(nlopt_func*)malloc(numopt*sizeof(nlopt_func));
       for(int i=0;i<numopt;i++){
-	maximins[i]=(nlopt_func)ffintensity_maximinconstraint;
+	maximins[i]=(nlopt_func)phaseoverlapsym_maximinconstraint;
 	data[specID[i]].print_at_singleobj=-1;
 	constrdata[i]=&(data[specID[i]]);
       }
-
-      int *print_at=&print_at_multiobj;
       
       double result=optimize_generic(ndofAll, dofAll,
 				     lbAll, ubAll,
-				     (nlopt_func)dummy_obj, print_at,
+				     (nlopt_func)dummy_objsym, &(data[specID[0]]),
 				     maximins,constrdata,numopt,
 				     alg,
 				     &nlopt_return);
@@ -631,6 +664,7 @@ int main(int argc, char **argv)
   MatDestroy(&Q);
 
   free(dof);
+  free(dof_reduced);
   
   MPI_Barrier(subcomm);
   MPI_Barrier(PETSC_COMM_WORLD);

@@ -16,7 +16,7 @@ CFLAGS   += -O3 -Wall -march=native -fcx-limited-range -fno-exceptions
 INCFLAGS = -I. ${FDOPT_INC} ${NLOPT_INC} ${PETSC_CC_INCLUDES} 
 LIBS=$(FDOPT_LIB) $(NLOPT_LIB) $(PETSC_LIB)
 
-all: steer_ffintensity_exec lens_ffintensity_exec symlens_ffintensity_exec
+all: steer_ffintensity_exec lens_ffintensity_exec symlens_ffintensity_exec symlens_phase_exec 
 
 steer_ffintensity.o: steer_ffintensity.c
 	$(CC) -c $(CFLAGS) $(INCFLAGS) $< -o $@
@@ -31,4 +31,9 @@ lens_ffintensity_exec: lens_ffintensity.o
 symlens_ffintensity.o: symlens_ffintensity.c
 	$(CC) -c $(CFLAGS) $(INCFLAGS) $< -o $@
 symlens_ffintensity_exec: symlens_ffintensity.o
+	$(CC) $(CFLAGS) $< -o $@ $(LIBS)
+
+symlens_phase.o: symlens_phase.c
+	$(CC) -c $(CFLAGS) $(INCFLAGS) $< -o $@
+symlens_phase_exec: symlens_phase.o
 	$(CC) $(CFLAGS) $< -o $@ $(LIBS)

@@ -127,3 +127,101 @@ double ffintensitysym_maximinconstraint(int ndof_with_dummy, double *dof_with_du
   return dof_with_dummy[ndof]-obj;
 
 }
+
+
+#undef __FUNCT__
+#define __FUNCT__ "phaseoverlapsym"
+double phaseoverlapsym(int ndof, double *dof, double *grad, void *data)
+{
+
+  data_ *ptdata = (data_ *) data;
+
+  int mirrorX = ptdata->mirrorXY[0];
+  int mirrorY = ptdata->mirrorXY[1];
+  int mirrorXY[2] = {mirrorX,mirrorY};
+
+  DOFInfo dofi = ptdata->dofi;
+  int nx = dofi.nx;
+  int ny = dofi.ny;
+  int nlayers = dofi.numlayers;
+  int nxcells = (mirrorX==1) ? dofi.numcells_x/2 : dofi.numcells_x;
+  int nycells = (mirrorY==1) ? dofi.numcells_y/2 : dofi.numcells_y;
+  int neps_total = dofi.neps_total;
+
+  double *dofext=(double *)malloc(neps_total*sizeof(double));
+  double *gradext=(double *)malloc(neps_total*sizeof(double));
+  mirrorxy(dof, dofext, nx,ny,nlayers,nxcells,nycells, mirrorXY, 0);
+  MPI_Barrier(PETSC_COMM_WORLD);
+  
+  double objval = phaseoverlap(neps_total,dofext,gradext,data);
+  mirrorxy(grad, gradext, nx,ny,nlayers,nxcells,nycells, mirrorXY, 1); 
+
+  free(dofext);
+  free(gradext);
+
+  return objval;
+}
+
+#undef __FUNCT__
+#define __FUNCT__ "phaseoverlapsym_maximinconstraint"
+double phaseoverlapsym_maximinconstraint(int ndof_with_dummy, double *dof_with_dummy, double *grad_with_dummy, void *data)
+{
+  int ndof=ndof_with_dummy-1;
+  double obj=phaseoverlapsym(ndof,&(dof_with_dummy[0]),&(grad_with_dummy[0]),data);
+
+  for(int i=0;i<ndof;i++){
+    grad_with_dummy[i]=-1.0*grad_with_dummy[i];
+  }
+  grad_with_dummy[ndof]=1.0;
+
+  count--;
+
+  return dof_with_dummy[ndof]-obj;
+
+}
+
+
+#undef __FUNCT__
+#define __FUNCT__ "dummy_objsym"
+double dummy_objsym(int ndofAll_with_dummy, double *dofAll_with_dummy, double *dofgradAll_with_dummy, void *data)
+{
+
+  if(dofgradAll_with_dummy){
+    int i;
+    for(i=0;i<ndofAll_with_dummy-1;i++){
+      dofgradAll_with_dummy[i]=0;
+    }
+    dofgradAll_with_dummy[ndofAll_with_dummy-1]=1.0;
+  }
+  PetscPrintf(PETSC_COMM_WORLD,"******dummy value at step %d is %g \n",count,dofAll_with_dummy[ndofAll_with_dummy-1]);
+
+  data_ *ptdata = (data_ *) data;
+  int print_at = ptdata->print_at_multiobj;
+  if(print_at>0 && (count%print_at)==0){
+
+    int mirrorX = ptdata->mirrorXY[0];
+    int mirrorY = ptdata->mirrorXY[1];
+    int mirrorXY[2] = {mirrorX,mirrorY};
+
+    DOFInfo dofi = ptdata->dofi;
+    int nx = dofi.nx;
+    int ny = dofi.ny;
+    int nlayers = dofi.numlayers;
+    int nxcells = (mirrorX==1) ? dofi.numcells_x/2 : dofi.numcells_x;
+    int nycells = (mirrorY==1) ? dofi.numcells_y/2 : dofi.numcells_y;
+    int neps_total = dofi.neps_total;
+
+    double *dofext=(double *)malloc(neps_total*sizeof(double));
+    mirrorxy(dofAll_with_dummy, dofext, nx,ny,nlayers,nxcells,nycells, mirrorXY, 0);
+
+    char output_filename[PETSC_MAX_PATH_LEN];
+    sprintf(output_filename,"outputdof_step%d.txt",count);
+    writetofile_f2f(PETSC_COMM_WORLD,output_filename,dofext,neps_total);
+
+    free(dofext);
+  }
+
+  count++;
+  return dofAll_with_dummy[ndofAll_with_dummy-1];
+
+}

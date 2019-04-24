@@ -1,10 +1,14 @@
-#include "ffintensity.h"
+#include "phase.h"
 
 extern int count;
 
+//objective is conj(v)*x/cabs(x)
+//the derivative is  [ conj(v)/cabs(x) - creal(conj(v)*x)*conj(x)/pow(cabs(x),3) ] * dx/dp
+//Note that it is only good for pure x or y polarization.
+
 static PetscScalar objcell(MPI_Comm subcomm, PetscScalar *dofcell,
 			   Mat CurlCurl, Vec epsDiff, Vec epsBkg, DOFInfo *dofi, DM da, PetscReal omega, Vec b, Vec x, KSP ksp, int *its, int maxit,
-			   PetscScalar *ffx, PetscScalar *ffy, int iz_mtr, PetscScalar *grad_per_cell){
+			   PetscScalar *vx, PetscScalar *vy, int iz_mtr, PetscScalar *grad_per_cell){
 
   Vec eps;
   VecDuplicate(b,&eps);
@@ -19,26 +23,54 @@ static PetscScalar objcell(MPI_Comm subcomm, PetscScalar *dofcell,
 
   SolveMatrixDirect(subcomm,ksp,M,b,x,its,maxit);
 
-  Vec ffvec;
-  VecDuplicate(b,&ffvec);
-  vecfill_zslice(subcomm, da, dofi->mx,dofi->my, ffx,ffy, NULL, ffvec, iz_mtr);
-
-  PetscScalar obj;
-  VecTDot(ffvec,x,&obj);
-  
-  Vec u,grad;
+  Vec vconj,xabs,xconj,tmp,u,grad;
+  VecDuplicate(b,&vconj);
+  VecDuplicate(b,&xabs);
+  VecDuplicate(b,&xconj);
+  VecDuplicate(b,&tmp);
   VecDuplicate(b,&u);
   VecDuplicate(b,&grad);
-  KSPSolveTranspose(ksp,ffvec,u);
-  VecPointwiseMult(grad,u,x);
 
-  VecScale(grad,omega*omega);
+  vecfill_zslice(subcomm, da, dofi->mx,dofi->my, vx,vy, NULL, vconj, iz_mtr);
+  VecConjugate(vconj);
+  VecCopy(x,xabs);
+  VecCopy(x,xconj);
+  VecAbs(xabs);
+  VecConjugate(xconj);
+  VecPointwiseDivide(tmp,x,xabs);
+  PetscScalar obj;
+  VecTDot(vconj,tmp,&obj);
+
+  PetscScalar norm;
+  VecCopy(vconj,tmp);
+  VecAbs(tmp);
+  VecSum(tmp,&norm);
+  obj=obj/creal(norm);
+  
+  VecPointwiseMult(u,vconj,x);
+  VecCopy(u,tmp);
+  VecConjugate(tmp);
+  VecAXPY(u,1.0,tmp);
+  VecScale(u,-0.5);
+  VecPointwiseMult(u,u,xconj);
+  VecCopy(xabs,tmp);
+  VecPow(tmp,3);
+  VecPointwiseDivide(u,u,tmp);
+  VecPointwiseDivide(tmp,vconj,xabs);
+  VecAXPY(u,1.0,tmp);
+    
+  KSPSolveTranspose(ksp,u,grad);
+  VecPointwiseMult(grad,grad,x);
+
+  VecScale(grad,omega*omega/creal(norm));
   VecPointwiseMult(grad,grad,epsDiff);
   multilayer_backward(subcomm,grad,grad_per_cell,dofi,da);
 
-
   VecDestroy(&eps);
-  VecDestroy(&ffvec);
+  VecDestroy(&vconj);
+  VecDestroy(&xabs);
+  VecDestroy(&xconj);
+  VecDestroy(&tmp);
   VecDestroy(&u);
   VecDestroy(&grad);
   MatDestroy(&M);
@@ -65,7 +97,7 @@ static void consolidate(MPI_Comm subcomm, int colour, int meps_total, int meps_p
   for(int i=0;i<meps_total;i++){
     int i_local=i-colour*meps_per_comm;
     if(rank==0 && 0<=i_local && i_local<meps_per_comm)
-      tmp_grad[i] = 2.0*creal(conj(obj_total)*grad_per_comm[i_local]);
+      tmp_grad[i] = creal(conj(obj_total)*grad_per_comm[i_local]);
     else
       tmp_grad[i] = 0.0;
   }
@@ -78,11 +110,11 @@ static void consolidate(MPI_Comm subcomm, int colour, int meps_total, int meps_p
 }
 
 #undef __FUNCT__
-#define __FUNCT__ "ffintensity"
-double ffintensity(int ndof, double *dof, double *grad, void *data)
+#define __FUNCT__ "phaseoverlap"
+double phaseoverlap(int ndof, double *dof, double *grad, void *data)
 {
 
-  PetscPrintf(PETSC_COMM_WORLD,"Computing the objective |int v . E|^2\n");
+  PetscPrintf(PETSC_COMM_WORLD,"Computing the objective int Re[ int conj(v) . E/|E| ]\n");
   
   data_ *ptdata = (data_ *) data;
   
@@ -114,9 +146,12 @@ double ffintensity(int ndof, double *dof, double *grad, void *data)
   int maxit = ptdata->maxit;
   
   int ncells_per_comm = dofi->ncells_per_comm;
+  int ncomms = dofi->ncomms;
   int meps_per_cell = dofi->meps_per_cell;
   int meps_per_comm = dofi->meps_per_comm;
   int meps_total = dofi->meps_total;
+
+  double norm = (double)(ncells_per_comm*ncomms);
   
   PetscScalar *dofext=(PetscScalar *)malloc(meps_total*sizeof(PetscScalar));
   Vec _dofext, _dof;
@@ -166,11 +201,11 @@ double ffintensity(int ndof, double *dof, double *grad, void *data)
   for(int i=0;i<meps_total;i++){
     mgrad[i]=0;
     if(ux && uy)
-      mgrad[i]+=ugrad[i];
+      mgrad[i]+=ugrad[i]/norm;
     if(vx && vy)
-      mgrad[i]+=vgrad[i];
+      mgrad[i]+=vgrad[i]/norm;
     if(wx && wy)
-      mgrad[i]+=wgrad[i];
+      mgrad[i]+=wgrad[i]/norm;
   }
   
   array2mpi_f2c(mgrad,rho_out);
@@ -194,7 +229,10 @@ double ffintensity(int ndof, double *dof, double *grad, void *data)
   VecDestroy(&rho_out);
   VecDestroy(&rho_grad);
 
-  double obj_total=pow(cabs(uobj),2) + pow(cabs(vobj),2) + pow(cabs(wobj),2);
+  ptdata->total_phaseoverlap[0]=uobj;
+  ptdata->total_phaseoverlap[1]=vobj;
+  ptdata->total_phaseoverlap[2]=wobj;
+  double obj_total=(creal(uobj) + creal(vobj) + creal(wobj))/norm;
 
   PetscPrintf(PETSC_COMM_WORLD,"objval at step %d for specID %d is %.16g \n",count,specID,obj_total);
 
@@ -213,11 +251,11 @@ double ffintensity(int ndof, double *dof, double *grad, void *data)
 }
 
 #undef __FUNCT__
-#define __FUNCT__ "ffintensity_maximinconstraint"
-double ffintensity_maximinconstraint(int ndof_with_dummy, double *dof_with_dummy, double *grad_with_dummy, void *data)
+#define __FUNCT__ "phaseoverlap_maximinconstraint"
+double phaseoverlap_maximinconstraint(int ndof_with_dummy, double *dof_with_dummy, double *grad_with_dummy, void *data)
 {
   int ndof=ndof_with_dummy-1;
-  double obj=ffintensity(ndof,&(dof_with_dummy[0]),&(grad_with_dummy[0]),data);
+  double obj=phaseoverlap(ndof,&(dof_with_dummy[0]),&(grad_with_dummy[0]),data);
 
   for(int i=0;i<ndof;i++){
     grad_with_dummy[i]=-1.0*grad_with_dummy[i];

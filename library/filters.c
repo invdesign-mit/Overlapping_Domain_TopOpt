@@ -100,6 +100,60 @@ void density_filter(MPI_Comm comm, Mat *Qout, int nx, int ny, int numcells_x, in
 
 }
 
+static double piecewise(double rho, double *rg, double eta, double beta){
+
+  double rout;
+
+  if(beta<1e-3){
+
+    rout=rho;
+    *rg =1.0;
+
+  }else{
+      
+    if(rho>=0 && rho<=eta){
+      rout=eta * ( exp(-beta*(1-rho/eta)) - (1-rho/eta)*exp(-beta) );
+      *rg =eta * ( (beta/eta)*exp(-beta*(1-rho/eta)) + exp(-beta)/eta );
+    }else if(rho>eta && rho<=1.0){
+      rout=(1-eta) * ( 1 - exp(-beta*(rho-eta)/(1-eta)) + (rho-eta)*exp(-beta)/(1-eta) ) + eta;
+      *rg =(1-eta) * ( beta/(1-eta) * exp(-beta*(rho-eta)/(1-eta)) + exp(-beta)/(1-eta) );
+    }else if(rho<0){
+      rout=0;
+      *rg =0;
+    }else{
+      rout=1;
+      *rg =0;
+    }
+
+  }
+
+  return rout;
+  
+}
+
+static double tanhfilter(double rho, double *rg, double eta, double beta){
+
+  double rout;
+
+  if(beta<1e-3){
+    
+    rout=rho;
+    *rg =1.0;
+
+  }else{
+      
+    double r1 = tanh(beta*eta) + tanh(beta*(rho-eta));
+    double r2 = tanh(beta*eta) + tanh(beta*(1.0-eta));
+    double r3 = beta * cosh(beta*eta) * cosh(beta-beta*eta) / sinh(beta);
+    rout= r1/r2;
+    *rg = r3 / ( cosh(beta*(rho-eta)) * cosh(beta*(rho-eta)) );
+
+  }
+
+  return rout;
+  
+}
+
 #undef __FUNCT__
 #define __FUNCT__ "threshold_projection_filter"
 void threshold_projection_filter(Vec rho_in, Vec rho_out, Vec rho_grad, double filter_threshold, double filter_steepness)
@@ -121,21 +175,11 @@ void threshold_projection_filter(Vec rho_in, Vec rho_out, Vec rho_grad, double f
 
   for(i=ns;i<ne;i++){
 
-    if(beta<1e-3){
-
-      rout[i-ns]=rin[i-ns];
-      rg[i-ns]=1.0+PETSC_i*0.0;
-
-    }else{
-      
-      PetscReal rho= creal(rin[i-ns]);
-      PetscReal r1 = tanh(beta*eta) + tanh(beta*(rho-eta));
-      PetscReal r2 = tanh(beta*eta) + tanh(beta*(1.0-eta));
-      rout[i-ns]= r1/r2 + PETSC_i*0.0;
-      PetscReal r3 = beta * cosh(beta*eta) * cosh(beta-beta*eta) / sinh(beta);
-      rg[i-ns]  = r3 / ( cosh(beta*(rho-eta)) * cosh(beta*(rho-eta)) ) + PETSC_i*0.0;
-    }
-
+    double rho  = creal(rin[i-ns]);
+    double rhog; 
+    rout[i-ns] = piecewise(rho,&rhog,eta,beta) + PETSC_i*0;
+    rg[i-ns]   = rhog + PETSC_i*0;
+    
   }
 
   VecRestoreArray(rho_in,&rin);

@@ -433,11 +433,9 @@ int main(int argc, char **argv)
 	constrdata[i]=&(data[specID[i]]);
       }
 
-      int *print_at=&print_at_multiobj;
-      
       double result=optimize_generic(ndofAll, dofAll,
 				     lbAll, ubAll,
-				     (nlopt_func)dummy_obj, print_at,
+				     (nlopt_func)dummy_objsym, &(data[specID[0]]),
 				     maximins,constrdata,numopt,
 				     alg,
 				     &nlopt_return);
